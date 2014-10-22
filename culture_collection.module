@@ -187,6 +187,15 @@ function culture_collection_admin_form($form, &$form_state) {
 		'#title' => t('Enable culture collection importer.'),
 		'#default_value' => variable_get('culture_collection_enable', 0),
 	);
+	$form['max_nodes_created_per_cron'] = array(
+		'#type' => 'select',
+		'#title' => t('Maximum number of nodes to create each cron job from a bulk upload.'),
+		'#options' => array(1, 5, 10, 25, 50, 75, 100),
+	'#default_value' => $category['selected'],
+	'#description' => t('This option pertains only to bulk upload. '
+						.'Every time cron is run, this number of nodes are created from the raw uploaded data. '
+						.'Creating large numbers of nodes at a time can increase the chance of errors occuring.'),
+	);
 	return system_settings_form($form);
 }
 
