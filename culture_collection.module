@@ -191,7 +191,7 @@ function culture_collection_admin_form($form, &$form_state) {
 		'#type' => 'select',
 		'#title' => t('Maximum number of nodes to create each cron job from a bulk upload.'),
 		'#options' => array(1, 5, 10, 25, 50, 75, 100),
-	'#default_value' => variable_get('max_nodes_created_per_cron', 10),
+	'#default_value' => variable_get('max_nodes_created_per_cron', 50),
 	'#description' => t('This option pertains only to bulk upload. '
 						.'Every time cron is run, this number of nodes are created from the raw uploaded data. '
 						.'Creating large numbers of nodes at a time can increase the chance of errors occuring.'),
