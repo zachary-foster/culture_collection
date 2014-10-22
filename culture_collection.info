@@ -1,0 +1,6 @@
+name = "Grunwald Lab Culture Collection"
+description = "Enables functionality related to the 'Culture collection item' Content type."
+core = "7.x"
+version = "7.x-1.0"
+dependencies[] = "hierarchical_select"
+configure = admin/config/culture_collection

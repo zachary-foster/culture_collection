@@ -1,0 +1,513 @@
+<?php
+
+/**
+ *@file
+ *culture_collection.module
+ */
+
+/**
+ *Implements hook_permission().
+ */
+
+function culture_collection_permission() {
+	return array(
+		'administer culture collection' => array(
+			'title' => t('Administer Culture Collection'),
+			'description' => t('Perform administration tasks for the Culture Collection.'),
+		),
+		'import culture collection' => array(
+			'title' => t('Culture Collection Importing'),
+			'description' => t('Perform batch imports to the Culture Collection.'),
+		),
+	);
+}
+
+/**
+ *Implements hook_menu().
+ */
+
+function culture_collection_menu() {
+	$items['admin/config/culture_collection'] = array(
+		'title' => 'Culture Collection settings',
+		'type' => MENU_NORMAL_ITEM,
+		'page callback' => 'drupal_get_form',
+		'page arguments' => array('culture_collection_admin_form'),
+		'access arguments' => array('administer culture collection'),
+	);
+	$items['culture_collection/importer'] = array(
+		'title' => 'Culture Collection Importer',
+		'type' => MENU_NORMAL_ITEM,
+		'page callback' => 'drupal_get_form',
+		'page arguments' => array('culture_collection_importer_form'),
+		'access arguments' => array('import culture collection'),
+	);
+	$items['culture_collection/importer/%/manage'] = array(
+		'title callback' => 'culture_collection_upload_manage_form_title_callback',
+		'title arguments' => array(2), 
+		'type' => MENU_NORMAL_ITEM,
+		'page callback' => 'drupal_get_form',
+		'page arguments' => array('culture_collection_upload_manage_form', 2),
+		'access arguments' => array('import culture collection'),
+	);
+	return $items;
+}
+
+function culture_collection_upload_manage_form_title_callback($upload_id) {
+	$upload_object = reset(entity_load('node', array($upload_id)));
+	//print('<pre>' . print_r($upload_object,1) . '</pre>'); die; 
+	$count = $upload_object->field_upload_count['und'][0]['value'];
+	return 'Are you sure you want to delete upload '.$count.'?';
+}
+
+
+function culture_collection_upload_manage_form($form, &$form_state) {
+	$upload_id = array($form_state['build_info']['args']['0']);
+	$upload_object = reset(entity_load('node', $upload_id));
+	if (count($upload_object->field_nodes_created) > 0) {
+		$node_count = count($upload_object->field_nodes_created['und']);
+	} else {
+		$node_count = 0;
+	}
+	if (count($upload_object->field_nodes_revised) > 0) {
+		$revision_count = count($upload_object->field_nodes_revised['und']);
+	} else {
+		$revision_count = 0;
+	}
+	if (count($upload_object->field_number_of_terms_created) > 0) {
+		$term_count = $upload_object->field_number_of_terms_created['und'][0]['value'];
+	} else {
+		$term_count = 0;
+	}
+	//print('<pre>' . print_r($upload_object,1) . '</pre>'); die; 
+	$form['delete_nodes_created'] = array(
+		'#type' => 'checkbox', 
+		'#title' => t('Delete '.$node_count.' Nodes'),
+		'#description' => t('Delete all nodes that this import made. CAUTION: Will delete nodes even if a revision has been made since this import.'),
+	);
+	/*$form['delete_revisions_created'] = array(
+		'#type' => 'checkbox', 
+		'#title' => t('Delete '.$revision_count.' Revisions'),
+		'#description' => t('Delete revisions made during this import. Will not remove whole nodes, unless the origional node (revision 1) has been deleted.'),
+	);*/
+	$form['delete_terms_created'] = array(
+		'#type' => 'checkbox', 
+		'#title' => t('Delete '.$term_count.' Terms'),
+		'#description' => t('Delete all terms that this import made. CAUTION: Will delete terms even if an other node has referenced them since this import.'),
+	);
+	$form['submit'] = array(
+		'#type' => 'submit',
+		'#value' => t('DELETE'),
+	);
+	
+	return $form;
+}
+
+function culture_collection_upload_manage_form_submit($form, &$form_state) {
+	//print('<pre>' . print_r($form_state,1) . '</pre>'); die; 
+	$upload_id = $form_state['build_info']['args']['0'];
+	$upload_object = reset(entity_load('node', array($upload_id)));
+	if ($form_state['values']['delete_nodes_created'] and (count($upload_object->field_nodes_created) > 0)) {
+		foreach($upload_object->field_nodes_created['und'] as &$node) {
+			node_delete($node['nid']);
+		}
+		$upload_object->field_nodes_created = array();
+	}
+	/*if ($form_state['values']['delete_revisions_created'] and (count($upload_object->field_nodes_revised) > 0)) {
+
+		
+		
+		foreach($upload_object->field_nodes_revised['und'] as &$node) {
+			$node_revision = node_load(NULL, $node['vid'], $reset = FALSE);
+			$node_revision->vid = $node_revision->vid - 1;
+			$node_revision->revision = 1;
+			//print('<pre>' . print_r($node_revision,1) . '</pre>'); die; 
+			node_save($node_revision);
+			//node_revision_delete($node['vid']);
+		}
+		$upload_object->field_nodes_revised = array();
+	}*/
+	if ($form_state['values']['delete_terms_created']) {
+		if (count($upload_object->field_locations_created) > 0) {
+			foreach($upload_object->field_locations_created['und'] as &$node) {
+				taxonomy_term_delete($node['tid']);
+			}
+			$upload_object->field_locations_created = array();
+		}
+		if (count($upload_object->field_collectors_created) > 0) {
+			foreach($upload_object->field_collectors_created['und'] as &$node) {
+				taxonomy_term_delete($node['tid']);
+			}
+			$upload_object->field_collectors_created = array();
+		}
+		if (count($upload_object->field_substrata_created) > 0) {
+			foreach($upload_object->field_substrata_created['und'] as &$node) {
+				taxonomy_term_delete($node['tid']);
+			}
+			$upload_object->field_substrata_created = array();
+		}
+		if (count($upload_object->field_taxa_created) > 0) {
+			foreach($upload_object->field_taxa_created['und'] as &$node) {
+				taxonomy_term_delete($node['tid']);
+			}
+			$upload_object->field_taxa_created = array();
+		}
+		if (count($upload_object->field_host_taxa_created) > 0) {
+			foreach($upload_object->field_host_taxa_created['und'] as &$node) {
+				taxonomy_term_delete($node['tid']);
+			}
+			$upload_object->field_host_taxa_created = array();
+		}
+		if (count($upload_object->field_host_names_created) > 0) {
+			foreach($upload_object->field_host_names_created['und'] as &$node) {
+				taxonomy_term_delete($node['tid']);
+			}
+			$upload_object->field_host_names_created = array();
+		}
+		if (count($upload_object->field_nurseries_created) > 0) {
+			foreach($upload_object->field_nurseries_created['und'] as &$node) {
+				taxonomy_term_delete($node['tid']);
+			}
+			$upload_object->field_nurseries_createdd = array();
+		}
+	}
+
+	$upload_object->field_status['und'][0]['value'] = 'Deleted';
+	node_save($upload_object);
+	drupal_set_message(t('submitted.'));
+	$form_state['redirect'] = 'culture_collection/importer';
+}
+
+/**
+ *administer culture  collection form.
+ */
+
+function culture_collection_admin_form($form, &$form_state) {
+	$form['culture_collection_enable'] = array(
+		'#type' => 'checkbox', 
+		'#title' => t('Enable culture collection importer.'),
+		'#default_value' => variable_get('culture_collection_enable', 0),
+	);
+	return system_settings_form($form);
+}
+
+
+/**
+ *culture  collection importer form.
+ */
+
+function culture_collection_importer_form($form, &$form_state) {
+	$form['batch_import'] = array(
+		'#title' => t('batch import'),
+		'#type' => 'textarea',
+		'#description' => t('Paste input from a spreadsheet application with the correct format.'),
+		'#default_value' => '',
+		'#required' => TRUE,
+	);
+	
+	$form['submit'] = array(
+		'#type' => 'submit',
+		'#value' => t('Import'),
+	);
+	
+	return $form;
+}
+
+function culture_collection_importer_form_validate($form, &$form_state) {
+	//print('<pre>' . print_r(preg_split('/\r\n|\r|\n/', $form_state['values']['batch_import']),1) . '</pre>'); die();
+	//form_set_error('batch_import', t('Invalid format'));
+	return TRUE;
+}
+
+function _parse_bool($input) {
+	if (strcasecmp(trim($input), 'yes') == 0) {
+		return 1;
+	} elseif (strcasecmp(trim($input), 'no') == 0) {
+		return 0;
+	}
+}
+
+/**
+ * Return the term id for a given term name.
+ */
+function _get_tid_from_term_name($term_name, $vocabulary, $parent = 0) {
+	$arr_terms = taxonomy_get_term_by_name($term_name, $vocabulary);
+	//print('<pre>' . print_r(taxonomy_get_term_by_name("Miwokpark", 'culture_collection_locations'),1) . '</pre>'); die;
+	if (!empty($arr_terms)) {
+		$arr_terms = array_values($arr_terms);
+		$tid = $arr_terms[0]->tid;
+		$new_term = FALSE;
+	}
+	else {
+		$vobj = taxonomy_vocabulary_machine_name_load($vocabulary);
+		$term = new stdClass();
+		$term->name = $term_name;
+		$term->vid = $vobj->vid;
+		$term->parent = $parent;
+		taxonomy_term_save($term);
+		$tid = $term->tid;
+		$new_term = TRUE;
+	}
+	//return array($tid, $new_term);
+	return $tid;
+}
+
+/**
+ * Return the term id for a given term name.
+ */
+function t_get_tid_from_term_name($term_name, $vocabulary, $parent = 0) {
+	$arr_terms = taxonomy_get_term_by_name($term_name, $vocabulary);
+	//print('<pre>' . print_r(taxonomy_get_term_by_name("Miwokpark", 'culture_collection_locations'),1) . '</pre>'); die;
+	if (!empty($arr_terms)) {
+		$arr_terms = array_values($arr_terms);
+		$tid = $arr_terms[0]->tid;
+		$new_term = FALSE;
+	}
+	else {
+		$vobj = taxonomy_vocabulary_machine_name_load($vocabulary);
+		$term = new stdClass();
+		$term->name = $term_name;
+		$term->vid = $vobj->vid;
+		$term->parent = $parent;
+		taxonomy_term_save($term);
+		$tid = $term->tid;
+		$new_term = TRUE;
+	}
+	return array($tid, $new_term);
+	//return $tid;
+}
+
+/**
+ *	Parses a date string in MM/DD/YYYY format or shorter (e.g. MM/YYYY) 
+ *	Returns the date component specified
+ */
+
+function _get_date_part($date_string, $part) {
+	$parts = array_reverse(explode("/", $date_string));
+	switch ($part)
+	{
+	case "year":
+		if (count($parts) > 0) {
+			return $parts[0];
+		} else {
+			return "";
+		}
+		break;
+	case "month":
+		if (count($parts) == 2) {
+			return $parts[1];
+		} elseif (count($parts) == 3) {
+			return $parts[2];
+		} else {
+			return "";
+		}
+		break;
+	case "day":
+		if (count($parts) == 3) {
+			return $parts[1];
+		} else {
+			return "";
+		}
+		break;
+	}
+
+}
+
+
+/**
+ *	Return the term object for a given term name in a given vocabulary, with a given parent.
+ * 		This allows for hierarchy-sensitive searching.
+ *		Returns the first match. 
+ */
+function get_term_in_hierarchy($term_name, $vocabulary_name, $parent_tid = 0) {
+	$default_return_value = FALSE;
+	$root_parent_value = 0; //what the user enters to mean root 
+	if ($term_name == '') return $default_return_value; //make sure there is a term
+	//print 'is a term\n';
+	$matching_terms = taxonomy_get_term_by_name($term_name, $vocabulary_name); //finds all terms with the same name
+	if (empty($matching_terms)) return $default_return_value; //check if there are matches to the name
+	//print 'is a match\n';
+	$matching_terms = array_values($matching_terms); //convert keys to indexes
+	foreach ($matching_terms as &$match) { //check if matching terms have right parents
+		$parent_terms = taxonomy_get_parents($match->tid);
+		if (empty($parent_terms) and $parent_tid == $root_parent_value) return $match; //if the parent is supposed to be root and is.
+		//print 'looking through parents\n';
+		foreach ($parent_terms as &$parent) {
+			//print '$parent->tid ' . $parent->tid;
+			if ($parent->tid == $parent_tid) return $match; // if the correct parent is found.
+		}
+	}
+	//print 'gave up\n';
+	return $default_return_value;
+}
+
+
+/**
+ * Adds a hirearchical term classification to a node, creating the terms if they dont exist
+ * 	$terms: a list of term names, with each term corresponding to a level in a hierarchy
+ */
+function add_term_hierarchy(&$result_location, $terms, $vocabulary_name) {
+	$term_ids = array();
+	$term_ids_created = array();
+	$parent = 0;
+	$count = 0;
+	foreach ($terms as &$term_name) { //for each term supplied
+		if ($term_name != '') { //make sure there is a term
+			$matching_term = get_term_in_hierarchy($term_name, $vocabulary_name, $parent); //finds all terms with the same name
+			if ($matching_term) { //term exists
+				$tid = $matching_term->tid;
+			}
+			else { //term does not exist; make new term
+				$vobj = taxonomy_vocabulary_machine_name_load($vocabulary_name);
+				$term = new stdClass();
+				$term->name = $term_name;
+				$term->vid = $vobj->vid;
+				$term->parent = $parent;
+				taxonomy_term_save($term);
+				$tid = $term->tid;
+				$term_ids_created[] = $tid;
+			}
+			$result_location[$count]['tid'] = $tid; //store result 
+			$term_ids[] = $tid;
+			$parent = $tid;
+			$count = $count + 1;
+		} else {
+			break;
+		}
+	}
+	return $term_ids_created;
+}
+
+function culture_collection_importer_form_submit($form, &$form_state) {
+	$lines = preg_split('/\r\n|\r|\n/', $form_state['values']['batch_import']);
+	//remove last line if it is empty (trailing newline)
+	if(empty($lines[count($lines)-1])) {
+		unset($lines[count($lines)-1]);
+	}
+	$upload_node = new stdClass();
+	$upload_node->type = 'culture_collection_upload';
+	node_object_prepare($upload_node);
+	node_save($upload_node);
+	$upload_id = $upload_node->nid;
+	$nodes_made = array();
+	$nodes_revised = array();
+	$location_terms_made = array();
+	$host_terms_made = array();
+	$collector_terms_made = array();
+	$substrate_terms_made = array();
+	$taxa_terms_made = array();
+	$host_taxa_terms_made = array();
+	$nursery_terms_made = array();
+	foreach ($lines as &$line) {
+    		$parts = explode("\t", $line);
+		$parts = array_pad($parts, 28, '');
+		$query = new EntityFieldQuery();
+		$query->entityCondition('entity_type', 'node')
+			->entityCondition('bundle', 'culture_collection_item')
+			->propertyCondition('status', 1)
+			->fieldCondition('field_isolate_id', 'value', $parts[1], '=');
+		$result = $query->execute();
+		if (isset($result['node'])) { //If the node has already exists based on isolate ID
+ 			$previous_node_nids = array_keys($result['node']);
+			$previous_nodes = entity_load('node', $previous_node_nids);
+			$node = reset($previous_nodes);
+			$node->revision = 1;
+			$node->log = "Revised in a batch upload.";
+			$revision = TRUE;
+		} else {
+			$node = new stdClass();
+			$node->type = 'culture_collection_item';
+			node_object_prepare($node);
+			$node->log = "Batch uploaded.";
+			$revision = FALSE;
+		}
+		$testid = 'field_access_id';
+		$node->language = LANGUAGE_NONE;
+		$node->field_upload_id[$node->language][0]['nid'] = $upload_id;
+		if ($parts[0] != '') $node->field_access_id[$node->language][0]['value'] = $parts[0];
+		if ($parts[1] != '') $node->field_isolate_id[$node->language][0]['value'] = $parts[1];
+		if ($parts[2] != '') $node->field_strain_number[$node->language][0]['value'] = $parts[2];
+		if ($parts[17] != '') $node->field_mt[$node->language][0]['value'] = $parts[17];
+		if ($parts[20] != '') $node->field_location_area_jp_[$node->language][0]['value'] = $parts[20];
+		if ($parts[26] != '') $node->field_rack_location[$node->language][0]['value'] = $parts[26];
+		if ($parts[19] != '') $node->field_miscellaneous[$node->language][0]['value'] = $parts[19];
+		if ($parts[23] != '') $node->field_its[$node->language][0]['value'] = _parse_bool($parts[23]);
+		if ($parts[24] != '') $node->field_aflp[$node->language][0]['value'] = _parse_bool($parts[24]);
+		if ($parts[25] != '') $node->field_single_spored[$node->language][0]['value'] = _parse_bool($parts[25]);
+		if ($parts[21] != '') $node->field_dna[$node->language][0]['value'] = _parse_bool($parts[21]);
+		if ($parts[22] != '') $node->field_cryo[$node->language][0]['value'] = _parse_bool($parts[22]);
+		if ($parts[9] != '') {
+			$node->field_received[$node->language][0]['from']['year'] = _get_date_part($parts[9], 'year');
+			$node->field_received[$node->language][0]['from']['month'] = _get_date_part($parts[9], 'month');
+			$node->field_received[$node->language][0]['from']['day'] = _get_date_part($parts[9], 'day');
+		}
+		if ($parts[10] != '') {
+			$node->field_isolated[$node->language][0]['from']['year'] = _get_date_part($parts[10], 'year');
+			$node->field_isolated[$node->language][0]['from']['month'] = _get_date_part($parts[10], 'month');
+			$node->field_isolated[$node->language][0]['from']['day'] = _get_date_part($parts[10], 'day');
+		}
+		if ($parts[27] != '') {
+			$node->field_restored[$node->language][0]['from']['year'] = _get_date_part($parts[27], 'year');
+			$node->field_restored[$node->language][0]['from']['month'] = _get_date_part($parts[27], 'month');
+			$node->field_restored[$node->language][0]['from']['day'] = _get_date_part($parts[27], 'day');
+		}
+		$host_terms_made = array_merge($host_terms_made, add_term_hierarchy($node->field_host_common_name[$node->language], array_slice($parts, 5, 1), 'culture_collection_host_common_names'));
+		$collector_terms_made = array_merge($collector_terms_made, add_term_hierarchy($node->field_person[$node->language], array_slice($parts, 11, 1), 'culture_collection_people'));
+		$substrate_terms_made = array_merge($substrate_terms_made, add_term_hierarchy($node->field_substrate[$node->language], array_slice($parts, 18, 1), 'culture_collection_substrate'));
+		$nursery_terms_made = array_merge($nursery_terms_made, add_term_hierarchy($node->field_nursery[$node->language], array_slice($parts, 16, 1), 'culture_collection_nurseries'));
+		$location_terms_made = array_merge($location_terms_made, add_term_hierarchy($node->field_location[$node->language], array_slice($parts, 12, 4), 'culture_collection_locations'));
+		$host_taxa_terms_made = array_merge($host_taxa_terms_made, add_term_hierarchy($node->field_host_2[$node->language], array_slice($parts, 6, 3), 'culture_collection_hosts'));
+		$taxa_terms_made = array_merge($taxa_terms_made, add_term_hierarchy($node->field_taxon[$node->language], array_slice($parts, 3, 2), 'culture_collection_taxon'));
+		node_save($node);
+		if ($revision) {
+			$nodes_revised[] = $node->vid;
+		} else {
+			$nodes_made[] = $node->nid;
+		}
+	}
+	$host_terms_made = array_unique($host_terms_made);
+	$collector_terms_made = array_unique($collector_terms_made);
+	$substrate_terms_made = array_unique($substrate_terms_made);
+	$nursery_terms_made = array_unique($nursery_terms_made);
+	$location_terms_made = array_unique($location_terms_made);
+	$host_taxa_terms_made = array_unique($host_taxa_terms_made);
+	$taxa_terms_made = array_unique($taxa_terms_made);
+	foreach ($location_terms_made as &$new_term) {
+		$upload_node->field_locations_created[$node->language][]['tid'] = $new_term;
+	}
+	foreach ($host_terms_made as &$new_term) {
+		$upload_node->field_host_names_created[$node->language][]['tid'] = $new_term;
+	}
+	foreach ($collector_terms_made as &$new_term) {
+		$upload_node->field_collectors_created[$node->language][]['tid'] = $new_term;
+	}
+	foreach ($substrate_terms_made as &$new_term) {
+		$upload_node->field_substrata_created[$node->language][]['tid'] = $new_term;
+	}
+	foreach ($taxa_terms_made as &$new_term) {
+		$upload_node->field_taxa_created[$node->language][]['tid'] = $new_term;
+	}
+	foreach ($host_taxa_terms_made as &$new_term) {
+		$upload_node->field_host_taxa_created[$node->language][]['tid'] = $new_term;
+	}
+	foreach ($nursery_terms_made as &$new_term) {
+		$upload_node->field_nurseries_created[$node->language][]['tid'] = $new_term;
+	}
+	foreach ($nodes_made as &$new_node) {
+		$upload_node->field_nodes_created[$node->language][]['nid'] = $new_node;
+	}
+	foreach ($nodes_revised as &$new_node) {
+		$upload_node->field_nodes_revised[$node->language][]['vid'] = $new_node;
+	}
+	$upload_node->field_status['und'][0]['value'] = 'Uploaded';
+	node_save($upload_node);
+	drupal_set_message(t('Import successful.'));
+}
+
+
+
+
+
+
+
+
+
