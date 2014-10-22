@@ -409,31 +409,31 @@ function culture_collection_cron() {
 		} else {
 			$uploads = array();
 		}
-		return($uploads);
+		return $uploads;
 	}
 	$uploads = get_uploads();
 	if (count($uploads) == 0) {
-		return();
+		return;
 	}
 	// Parse data into nodes ------------------------------------------------------------------------
 	foreach ($uploads as &$upload) {
-		$lines = preg_split('/\r\n|\r|\n/', $upload->raw_input);
-		foreach ($upload->queued as $index) {
+		$lines = preg_split('/\r\n|\r|\n/', $upload->field_raw_input);
+		foreach ($upload->field_queued as $index) {
 			$nodes_processed = $nodes_processed + 1;
 			$original_upload = clone $upload;
 			$result = parse_line($lines[$index], $upload); //$upload is modified
 			if ($result == "success") {
-				$upload->queued = array_diff($upload->queued, array($index)); //remove index
+				$upload->field_queued = array_diff($upload->field_queued, array($index)); //remove index
 			} else {
 				$upload = $original_upload;
-				$upload->errors = $upload->errors + 1;
+				$upload->field_errors = $upload->field_errors + 1;
 			}
 			if ($nodes_processed >= $max_nodes_to_parse) {
 				break;
 			}
 		}
-		if (count($upload->queued) == 0) {
-			$upload->status = "Complete";
+		if (count($upload->field_queued) == 0) {
+			$upload->field_status = "Complete";
 		}
 		node_save($upload);
 		if ($nodes_processed >= $max_nodes_to_parse) {
