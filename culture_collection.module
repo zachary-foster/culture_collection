@@ -417,23 +417,23 @@ function culture_collection_cron() {
 	}
 	// Parse data into nodes ------------------------------------------------------------------------
 	foreach ($uploads as &$upload) {
-		$lines = preg_split('/\r\n|\r|\n/', $upload->field_raw_input);
-		foreach ($upload->field_queued as $index) {
+		$lines = preg_split('/\r\n|\r|\n/', $upload->field_raw_input['und'][0]['value']);
+		foreach ($upload->field_queued['und'][0]['value'] as $index) {
 			$nodes_processed = $nodes_processed + 1;
 			$original_upload = clone $upload;
-			$result = parse_line($lines[$index], $upload); //$upload is modified
+			$result = parse_bulk_upload_line($lines[$index], $upload); //$upload is modified
 			if ($result == "success") {
-				$upload->field_queued = array_diff($upload->field_queued, array($index)); //remove index
+				$upload->field_queued['und'][0]['value'] = array_diff($upload->field_queued['und'][0]['value'], array($index)); //remove index
 			} else {
 				$upload = $original_upload;
-				$upload->field_errors = $upload->field_errors + 1;
+				$upload->field_errors['und'][0]['value'] = $upload->field_errors['und'][0]['value'] + 1;
 			}
 			if ($nodes_processed >= $max_nodes_to_parse) {
 				break;
 			}
 		}
-		if (count($upload->field_queued) == 0) {
-			$upload->field_status = "Complete";
+		if (count($upload->field_queued['und'][0]['value']) == 0) {
+			$upload->field_status['und'][0]['value'] = "Complete";
 		}
 		node_save($upload);
 		if ($nodes_processed >= $max_nodes_to_parse) {
@@ -442,7 +442,122 @@ function culture_collection_cron() {
 	}
 }
 
+
+//==================================================================================================
+// Parses a single line of batch upload and creates a culture collection item node
+function parse_bulk_upload_line($line, &$upload_node) {
+	// Parse line ----------------------------------------------------------------------------------
+    $parts = explode("\t", $line);
+	$parts = array_pad($parts, 28, '');
+	// Search for existing nodes with same isolate_id ----------------------------------------------
+	$query = new EntityFieldQuery();
+	$query->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', 'culture_collection_item')
+		->propertyCondition('status', 1)
+		->fieldCondition('field_isolate_id', 'value', $parts[1], '=');
+	$result = $query->execute();
+	// Get item if it already exists, otherwise make new node --------------------------------------
+	if (isset($result['node'])) { // node already exists
+		$previous_node_nids = array_keys($result['node']);
+		$previous_nodes = entity_load('node', $previous_node_nids);
+		$node = reset($previous_nodes);
+		$node->revision = 1;
+		$node->log = "Revised in a batch upload.";
+		$revision = TRUE;
+	} else { // make new node
+		$node = new stdClass();
+		$node->type = 'culture_collection_item';
+		node_object_prepare($node);
+		$node->log = "Batch uploaded.";
+		$revision = FALSE;
+	}
+	// Set item field values -----------------------------------------------------------------------
+	$testid = 'field_access_id';
+	$node->language = LANGUAGE_NONE;
+	$node->field_upload_id[$node->language][0]['nid'] = $upload_id;
+	if ($parts[0] != '') $node->field_access_id[$node->language][0]['value'] = $parts[0];
+	if ($parts[1] != '') $node->field_isolate_id[$node->language][0]['value'] = $parts[1];
+	if ($parts[2] != '') $node->field_strain_number[$node->language][0]['value'] = $parts[2];
+	if ($parts[17] != '') $node->field_mt[$node->language][0]['value'] = $parts[17];
+	if ($parts[20] != '') $node->field_location_area_jp_[$node->language][0]['value'] = $parts[20];
+	if ($parts[26] != '') $node->field_rack_location[$node->language][0]['value'] = $parts[26];
+	if ($parts[19] != '') $node->field_miscellaneous[$node->language][0]['value'] = $parts[19];
+	if ($parts[23] != '') $node->field_its[$node->language][0]['value'] = _parse_bool($parts[23]);
+	if ($parts[24] != '') $node->field_aflp[$node->language][0]['value'] = _parse_bool($parts[24]);
+	if ($parts[25] != '') $node->field_single_spored[$node->language][0]['value'] = _parse_bool($parts[25]);
+	if ($parts[21] != '') $node->field_dna[$node->language][0]['value'] = _parse_bool($parts[21]);
+	if ($parts[22] != '') $node->field_cryo[$node->language][0]['value'] = _parse_bool($parts[22]);
+	if ($parts[9] != '') {
+		$node->field_received[$node->language][0]['from']['year'] = _get_date_part($parts[9], 'year');
+		$node->field_received[$node->language][0]['from']['month'] = _get_date_part($parts[9], 'month');
+		$node->field_received[$node->language][0]['from']['day'] = _get_date_part($parts[9], 'day');
+	}
+	if ($parts[10] != '') {
+		$node->field_isolated[$node->language][0]['from']['year'] = _get_date_part($parts[10], 'year');
+		$node->field_isolated[$node->language][0]['from']['month'] = _get_date_part($parts[10], 'month');
+		$node->field_isolated[$node->language][0]['from']['day'] = _get_date_part($parts[10], 'day');
+	}
+	if ($parts[27] != '') {
+		$node->field_restored[$node->language][0]['from']['year'] = _get_date_part($parts[27], 'year');
+		$node->field_restored[$node->language][0]['from']['month'] = _get_date_part($parts[27], 'month');
+		$node->field_restored[$node->language][0]['from']['day'] = _get_date_part($parts[27], 'day');
+	}
+	$host_terms_made = add_term_hierarchy($node->field_host_common_name[$node->language], array_slice($parts, 5, 1), 'culture_collection_host_common_names');
+	$collector_terms_made = add_term_hierarchy($node->field_person[$node->language], array_slice($parts, 11, 1), 'culture_collection_people');
+	$substrate_terms_made = add_term_hierarchy($node->field_substrate[$node->language], array_slice($parts, 18, 1), 'culture_collection_substrate');
+	$nursery_terms_made = add_term_hierarchy($node->field_nursery[$node->language], array_slice($parts, 16, 1), 'culture_collection_nurseries');
+	$location_terms_made = add_term_hierarchy($node->field_location[$node->language], array_slice($parts, 12, 4), 'culture_collection_locations');
+	$host_taxa_terms_made = add_term_hierarchy($node->field_host_2[$node->language], array_slice($parts, 6, 3), 'culture_collection_hosts');
+	$taxa_terms_made = add_term_hierarchy($node->field_taxon[$node->language], array_slice($parts, 3, 2), 'culture_collection_taxon');
+	// Modify upload field values ------------------------------------------------------------------
+	function add_if_new(&$my_array, $index, $to_add) {
+		foreach ($to_add as $addition) {
+			$current = array_map(function($element){return $element[$index];}, $my_array);
+			if (!in_array($addition, $my_array)) $my_array[][$index] = $new_term;
+		}
+	}
+	add_if_new($upload_node->field_locations_created[$node->language], 'tid', $location_terms_made);
+	add_if_new($upload_node->field_host_names_created[$node->language], 'tid', $host_terms_made);
+	add_if_new($upload_node->field_collectors_created[$node->language], 'tid', $collector_terms_made);
+	add_if_new($upload_node->field_substrata_created[$node->language], 'tid', $substrate_terms_made);
+	add_if_new($upload_node->field_taxa_created[$node->language], 'tid', $taxa_terms_made);
+	add_if_new($upload_node->field_host_taxa_created[$node->language], 'tid', $host_taxa_terms_made);
+	add_if_new($upload_node->field_nurseries_created[$node->language], 'tid', $nursery_terms_made);
+	add_if_new($upload_node->field_nodes_created[$node->language], 'nid', $nodes_made);
+	add_if_new($upload_node->field_nodes_revised[$node->language], 'vid', $nodes_revised);
+	if ($revision) {
+		$upload_node->field_nodes_revised[$node->language][]['vid'] = $node->vid;
+	} else {
+		$upload_node->field_nodes_created[$node->language][]['nid'] = $node->nid;
+	}
+	// Save node changes ---------------------------------------------------------------------------
+	node_save($node);
+	node_save($upload_node);
+	drupal_set_message(t('Import successful.'));
+	
+}
+
+
+//==================================================================================================
+// Controls batch import submit actions
 function culture_collection_importer_form_submit($form, &$form_state) {
+	// Parse input ---------------------------------------------------------------------------------
+	$raw_data = $form_state['values']['batch_import']
+	$lines = preg_split('/\r\n|\r|\n/', $raw_data);
+	if(empty($lines[count($lines) - 1])) {
+		unset($lines[count($lines) - 1]);
+	}
+	// Create upload node --------------------------------------------------------------------------
+	$upload_node = new stdClass();
+	$upload_node->type = 'culture_collection_upload';
+	node_object_prepare($upload_node);
+	$upload_node-> field_raw_input['und'][0]['value'] = $raw_data;
+	$upload_node-> field_queued['und'][0]['value'] = range(0, count($lines) - 1);
+	node_save($upload_node);
+}
+
+
+function culture_collection_importer_form_submit_old($form, &$form_state) {
 	$lines = preg_split('/\r\n|\r|\n/', $form_state['values']['batch_import']);
 	//remove last line if it is empty (trailing newline)
 	if(empty($lines[count($lines)-1])) {
@@ -463,7 +578,7 @@ function culture_collection_importer_form_submit($form, &$form_state) {
 	$host_taxa_terms_made = array();
 	$nursery_terms_made = array();
 	foreach ($lines as &$line) {
-    		$parts = explode("\t", $line);
+    	$parts = explode("\t", $line);
 		$parts = array_pad($parts, 28, '');
 		$query = new EntityFieldQuery();
 		$query->entityCondition('entity_type', 'node')
@@ -566,6 +681,7 @@ function culture_collection_importer_form_submit($form, &$form_state) {
 	$upload_node->field_status['und'][0]['value'] = 'Uploaded';
 	node_save($upload_node);
 	drupal_set_message(t('Import successful.'));
+	return "success";
 }
 
 
