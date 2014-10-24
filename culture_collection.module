@@ -497,7 +497,7 @@ function culture_collection_cron() {
 		$query = new EntityFieldQuery();
 		$query->entityCondition('entity_type', 'node')
 			->entityCondition('bundle', 'culture_collection_upload')
-			->fieldCondition('field_status', 'value', 'Complete', '!=')
+			->fieldCondition('field_status', 'value', 'Queued', '=')
 			->fieldOrderBy('field_upload_count', 'value', 'DESC')
 			->addMetaData('account', user_load(1)); // Run the query as user 1.
 		$result = $query->execute();
