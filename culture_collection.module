@@ -393,8 +393,8 @@ function add_term_hierarchy(&$result_location, $terms, $vocabulary_name) {
 function add_if_new(&$my_array, $index, $to_add) {
 	if (count($my_array) == 0) $my_array['und'] = array();
 	foreach ($to_add as $addition) {
-		$current = array_map(function($element, $i){return $element[$i];}, $my_array['und'], array($index));
-		if (!in_array($addition, $current)) $my_array[][$index] = $addition;
+		//drupal_set_message(print_r($addition, true), 'error');
+		$my_array['und'][][$index] = $addition;
 	}
 }
 
@@ -472,7 +472,9 @@ function parse_bulk_upload_line($line, &$upload_node) {
 	add_if_new($upload_node->field_host_names_created, 'tid', $host_terms_made);
 	add_if_new($upload_node->field_collectors_created, 'tid', $collector_terms_made);
 	add_if_new($upload_node->field_substrata_created, 'tid', $substrate_terms_made);
+	//drupal_set_message(print_r($upload_node->field_taxa_created, true), 'error');
 	add_if_new($upload_node->field_taxa_created, 'tid', $taxa_terms_made);
+	//drupal_set_message(print_r($upload_node->field_taxa_created, true), 'error');
 	add_if_new($upload_node->field_host_taxa_created, 'tid', $host_taxa_terms_made);
 	add_if_new($upload_node->field_nurseries_created, 'tid', $nursery_terms_made);
 	if ($revision) {
