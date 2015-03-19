@@ -405,18 +405,24 @@ Parses a single line of batch upload and creates a culture collection item node
 function parse_bulk_upload_line($line, &$upload_node) {
 	// Parse line ----------------------------------------------------------------------------------
     $parts = explode("\t", $line);
+    drupal_set_message("<pre>" . print_r($parts, true) . "</pre>", 'error');
 	$parts = array_pad($parts, 28, '');
 	// Search for existing nodes with same isolate_id ----------------------------------------------
 	$query = new EntityFieldQuery();
 	$query->entityCondition('entity_type', 'node')
 		->entityCondition('bundle', 'culture_collection_item')
 		->propertyCondition('status', 1)
-		->fieldCondition('field_isolate_id', 'value', $parts[1], '=');
+		->fieldCondition('field_isolate_id', 'value', $parts[1], '=', 0, 'und')
+		->addMetaData('account', user_load(1));
 	$result = $query->execute();
 	// Get item if it already exists, otherwise make new node --------------------------------------
+	//drupal_set_message("<pre>" . print_r(drupal_get_schema('field_data_field_isolate_id'), true) . "</pre>", 'error');
+	//drupal_set_message("<pre>" . print_r($result, true) . "</pre>", 'error');
+	drupal_set_message("<pre>" . print_r("|" . $parts[1] . "|", true) . "</pre>", 'error');
 	if (isset($result['node'])) { // node already exists
 		$previous_node_nids = array_keys($result['node']);
 		$previous_nodes = entity_load('node', $previous_node_nids);
+		//drupal_set_message("<pre>" . print_r($previous_nodes, true) . "</pre>", 'error');
 		$node = reset($previous_nodes);
 		$node->revision = 1;
 		$node->log = "Revised in a batch upload.";
@@ -445,16 +451,19 @@ function parse_bulk_upload_line($line, &$upload_node) {
 	if ($parts[21] != '') $node->field_dna[$node->language][0]['value'] = _parse_bool($parts[21]);
 	if ($parts[22] != '') $node->field_cryo[$node->language][0]['value'] = _parse_bool($parts[22]);
 	if ($parts[9] != '') {
+		$parts[9] = trim($parts[9], "s");
 		$node->field_received[$node->language][0]['from']['year'] = _get_date_part($parts[9], 'year');
 		$node->field_received[$node->language][0]['from']['month'] = _get_date_part($parts[9], 'month');
 		$node->field_received[$node->language][0]['from']['day'] = _get_date_part($parts[9], 'day');
 	}
 	if ($parts[10] != '') {
+		$parts[10] = trim($parts[10], "s");
 		$node->field_isolated[$node->language][0]['from']['year'] = _get_date_part($parts[10], 'year');
 		$node->field_isolated[$node->language][0]['from']['month'] = _get_date_part($parts[10], 'month');
 		$node->field_isolated[$node->language][0]['from']['day'] = _get_date_part($parts[10], 'day');
 	}
 	if ($parts[27] != '') {
+		$parts[27] = trim($parts[27], "s");
 		$node->field_restored[$node->language][0]['from']['year'] = _get_date_part($parts[27], 'year');
 		$node->field_restored[$node->language][0]['from']['month'] = _get_date_part($parts[27], 'month');
 		$node->field_restored[$node->language][0]['from']['day'] = _get_date_part($parts[27], 'day');
@@ -466,7 +475,27 @@ function parse_bulk_upload_line($line, &$upload_node) {
 	$location_terms_made = add_term_hierarchy($node->field_location, array_slice($parts, 12, 4), 'culture_collection_locations');
 	$host_taxa_terms_made = add_term_hierarchy($node->field_host_2, array_slice($parts, 6, 3), 'culture_collection_hosts');
 	$taxa_terms_made = add_term_hierarchy($node->field_taxon, array_slice($parts, 3, 2), 'culture_collection_taxon');
-	node_save($node);
+	// Save node -------
+	//drupal_set_message("<pre>" . print_r("TRYING", true) . "</pre>", 'error');
+	if ($revision) {
+		$old_vid = $node->vid;
+		node_save($node);
+		if ($node->vid == $old_vid) {
+			$output = "fail";
+		} else {
+			$output = "success";
+		}
+	} else {
+		node_save($node);
+		if (isset($node->nid)) {
+			$output = "success";
+		} else {
+			$output = "fail";
+		}
+	}
+	//drupal_set_message("<pre>" . print_r($node, true) . "</pre>", 'error');
+	
+	//drupal_set_message("<pre>" . print_r($output, true) . "</pre>", 'error');
 	// Modify upload field values ------------------------------------------------------------------
 	add_if_new($upload_node->field_locations_created, 'tid', $location_terms_made);
 	add_if_new($upload_node->field_host_names_created, 'tid', $host_terms_made);
@@ -483,7 +512,7 @@ function parse_bulk_upload_line($line, &$upload_node) {
 		$upload_node->field_nodes_created[$node->language][]['nid'] = $node->nid;
 	}
 	node_save($upload_node);
-	return "success";
+	return $output;
 }
 
 
@@ -500,7 +529,7 @@ function culture_collection_cron() {
 		$query->entityCondition('entity_type', 'node')
 			->entityCondition('bundle', 'culture_collection_upload')
 			->fieldCondition('field_status', 'value', 'Queued', '=')
-			->fieldOrderBy('field_upload_count', 'value', 'DESC')
+			->fieldOrderBy('field_upload_count', 'value', 'ASC')
 			->addMetaData('account', user_load(1)); // Run the query as user 1.
 		$result = $query->execute();
 		if (isset($result['node'])) {
